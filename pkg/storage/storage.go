@@ -1,39 +1,233 @@
 package storage
 
 import (
+	"database/sql"
+	"encoding/json"
 	"fmt"
+	"strings"
 
-	bleve "github.com/blevesearch/bleve/v2"
+	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite/vec"
+)
+
+const (
+	defaultTagWeight    float32 = 0.2
+	defualtVisualWeight float32 = 0.4
+	defaultTextWeight    float32 = 0.4
 )
 
 type Storage struct {
-	Index bleve.Index
-	Path  string
+	db *sql.DB
+
+	tagSearchWeight    float32
+	visualSearchWeight float32
+	textSearchWeight    float32
 }
 
 type Entry struct {
-	ID         string      `json:"id"`
-	Path       string      `json:"path"`
-	Tags       []string    `json:"tags"`
-	Embeddings [][]float64 `json:"embeddings"`
+	ID   int64    `json:"id"`
+	Path string   `json:"path"`
+	Tags []string `json:"tags"`
+}
+
+type IndexedEntry struct {
+	Entry
+
+	VisualEmbed []float32 `json:"visual_embedding"`
+	OCDEmbed    []float32 `json:"ocd_embedding"`
 }
 
 func NewStorage(path string) (*Storage, error) {
-	index, err := bleve.Open(path)
-	if err == bleve.ErrorIndexPathDoesNotExist {
-		mapping := bleve.NewIndexMapping()
-
-		tagsField := bleve.NewTextFieldMapping()
-		tagsField.Analyzer = "keyword"
-
-		vectorField := bleve.NewVectorFieldMapping()
-		vectorField.Dims = 1024
-		//vectorField.Similarity =
-
-		index, err = bleve.New(path, mapping)
-	}
+	db, err := sql.Open("sqlite", path)
 	if err != nil {
-		return nil, fmt.Errorf("Error occurred while opening/creating index:%v", err)
+		return nil, err
 	}
-	return &Storage{Index: index, Path: path}, nil
+
+	storage := &Storage{
+		db:                 db,
+		tagSearchWeight:    defaultTagWeight,
+		visualSearchWeight: defualtVisualWeight,
+		textSearchWeight:    defaultTextWeight,
+	}
+	return storage, nil
+}
+
+func (s *Storage) Close() error {
+	return s.db.Close()
+}
+
+func (s *Storage) Init() error {
+	_, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS entries (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			path TEXT NOT NULL
+		)
+	`)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS tags (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE
+		)
+	`)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS entry_tags (
+			entry_id INTEGER NOT NULL,
+			tag_id INTEGER NOT NULL,
+			PRIMARY KEY (entry_id, tag_id),
+			FOREIGN KEY (entry_id) REFERENCES entries(id),
+			FOREIGN KEY (tag_id) REFERENCES tags(id)
+		)
+	`)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.Exec(`
+		CREATE VIRTUAL TABLE IF NOT EXISTS visual_embeddings 
+		USING vec0(
+		embedding float[1024])
+	`)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.Exec(`
+		CREATE VIRTUAL TABLE IF NOT EXISTS ocd_embeddings 
+		USING vec0(
+		embedding float[1024])
+	`)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *Storage) InsertEntry(e IndexedEntry) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(`
+		INSERT INTO entries (id, path) VALUES (?, ?)
+	`, e.ID, e.Path)
+	if err != nil {
+		return err
+	}
+
+	entryID, err := res.LastInsertId()
+	if err != nil {
+		return err
+	}
+
+	err = insertTags(tx, entryID, e.Tags)
+	if err != nil {
+		return err
+	}
+
+	visualEmbedJSON, err := json.Marshal(e.VisualEmbed)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`
+		INSERT INTO visual_embeddings (rowid, embedding) VALUES (?, ?)
+	`, entryID, string(visualEmbedJSON))
+	if err != nil {
+		return err
+	}
+
+	ocdEmbedJSON, err := json.Marshal(e.OCDEmbed)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`
+		INSERT INTO ocd_embeddings (rowid, embedding) VALUES (?, ?)
+	`, entryID, string(ocdEmbedJSON))
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func insertTags(tx *sql.Tx, entryID int64, tags []string) error {
+	placeholders := make([]string, len(tags))
+	for i := range tags {
+		placeholders[i] = "(?)"
+	}
+
+	placeholder := strings.Join(placeholders, ",")
+
+	args := make([]any, len(tags))
+	for i, tag := range tags {
+		args[i] = tag
+	}
+
+	query := fmt.Sprintf(`
+		INSERT OR IGNORE INTO tags (name) VALUES %s
+	`, placeholder)
+
+	_, err := tx.Exec(query, args...)
+	if err != nil {
+		return err
+	}
+
+	placeholder = fmt.Sprintf("(%s)", strings.Repeat("?,", len(tags)-1)+"?")
+
+	query = fmt.Sprintf(`
+		INSERT INTO entry_tags (entry_id, tag_id)
+		SELECT ?, id FROM tags WHERE name IN %s
+	`, placeholder)
+
+	entryArgs := make([]any, 1)
+	entryArgs[0] = entryID
+	entryArgs = append(entryArgs, args...)
+	_, err = tx.Exec(query, entryArgs...)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *Storage) GetEntry(entryID int64) (Entry, error) {
+	query := `
+		SELECT path 
+		FROM entries
+		WHERE id = ?
+	`
+
+	row := s.db.QueryRow(query, entryID)
+
+	var path string
+
+	err := row.Scan(&path)
+	if err != nil {
+		return Entry{}, err
+	}
+
+	//TODO return tags
+	return Entry{
+		entryID,
+		path,
+		make([]string, 0),
+	}, nil
+}
+
+func (s *Storage) SetSearchWeights(tag, visual, text float32) {
+	s.tagSearchWeight = tag
+	s.visualSearchWeight = visual
+	s.textSearchWeight = text
 }

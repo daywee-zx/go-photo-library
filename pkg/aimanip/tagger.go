@@ -11,10 +11,15 @@ import (
 	"strings"
 )
 
+const (
+	tagModelName = "qwen2.5vl"
+	tagUrl       = "http://localhost:11434/api/chat"
+)
+
 type Message struct {
 	Role    string   `json:"role"`
 	Content string   `json:"content"`
-	Images  []string `json:"images"`
+	Images  []string `json:"images,omitempty"`
 }
 
 type ChatRequest struct {
@@ -30,34 +35,30 @@ type ChatResponse struct {
 	} `json:"message"`
 }
 
-type TagResponse struct {
+type TagImageResponse struct {
 	Description string   `json:"description"`
 	Tags        []string `json:"tags"`
 	Text        string   `json:"text"`
 }
 
-// TagImage takes an image path as input and returns a slice of tags, an image description, and an error if any occurs during the tagging process.
-func TagImage(imagePath string) (string, error) {
-	modelName := "qwen2.5vl"
+type TagReqResponse struct {
+	Tags []string `json:"tags"`
+}
 
+// TagImage takes an image path as input and returns a slice of tags, an image description, and an error if any occurs during the tagging process.
+func TagImage(imagePath string) (TagImageResponse, error) {
 	imageData, err := os.ReadFile(imagePath)
 	if err != nil {
-		return "", fmt.Errorf("Error occured while opening image file:%v", err)
+		return TagImageResponse{}, fmt.Errorf("Error occured while opening image file:%v", err)
 	}
 	base64Image := base64.StdEncoding.EncodeToString(imageData)
 
-	prompt, err := os.ReadFile("pkg/aimanip/tagger_prompt.txt")
-	if err != nil {
-		return "", fmt.Errorf("Error occurred while reading prompt file:%v", err)
-	}
-	promptStr := string(prompt)
-
 	reqBody := ChatRequest{
-		Model: modelName,
+		Model: tagModelName,
 		Messages: []Message{
 			{
 				Role:    "user",
-				Content: promptStr,
+				Content: PromptTagPhoto,
 				Images:  []string{base64Image},
 			},
 		},
@@ -66,29 +67,77 @@ func TagImage(imagePath string) (string, error) {
 
 	data, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", fmt.Errorf("Error occurred while marshaling request body:%v", err)
+		return TagImageResponse{}, fmt.Errorf("Error occurred while marshaling request body:%v", err)
 	}
 
-	url := "http://localhost:11434/api/chat"
-
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
+	resp, err := http.Post(tagUrl, "application/json", bytes.NewBuffer(data))
 	if err != nil {
-		return "", fmt.Errorf("Error occurred while sending request to the model:%v", err)
+		return TagImageResponse{}, fmt.Errorf("Error occurred while sending request to the model:%v", err)
 	}
 	defer resp.Body.Close()
 
 	var chatResp ChatResponse
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("Error occurred while reading response body:%v", err)
+		return TagImageResponse{}, fmt.Errorf("Error occurred while reading response body:%v", err)
 	}
 
 	err = json.Unmarshal(body, &chatResp)
 	if err != nil {
-		return "", fmt.Errorf("Error occurred while unmarshaling response body:%v", err)
+		return TagImageResponse{}, fmt.Errorf("Error occurred while unmarshaling response body:%v", err)
 	}
 
-	return chatResp.Message.Content, nil
+	var tagResp TagImageResponse
+	err = json.Unmarshal([]byte(chatResp.Message.Content), &tagResp)
+	if err != nil {
+		return TagImageResponse{}, fmt.Errorf("Error occurred while unmarshaling tag response:%v", err)
+	}
+
+	return tagResp, nil
+}
+
+func TagRequest(request string) ([]string, error) {
+	reqBody := ChatRequest{
+		Model: tagModelName,
+		Messages: []Message{
+			{
+				Role:    "user",
+				Content: fmt.Sprintf(PromptTagRequest, request),
+			},
+		},
+		Stream: false,
+	}
+
+	data, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("Error occurred while marshaling request body:%v", err)
+	}
+
+	resp, err := http.Post(tagUrl, "application/json", bytes.NewBuffer(data))
+	if err != nil {
+		return nil, fmt.Errorf("Error occurred while sending request to the model:%v", err)
+	}
+	defer resp.Body.Close()
+
+	var chatResp ChatResponse
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("Error occurred while reading response body:%v", err)
+	}
+
+	err = json.Unmarshal(body, &chatResp)
+	if err != nil {
+		return nil, fmt.Errorf("Error occurred while unmarshaling response body:%v", err)
+	}
+
+	var tagResp TagReqResponse
+
+	err = json.Unmarshal([]byte(chatResp.Message.Content), &tagResp)
+	if err != nil {
+		return nil, fmt.Errorf("Error occurred while unmarshaling response body:%v", err)
+	}
+
+	return tagResp.Tags, nil
 }
 
 func parseResponse(response string) ([]string, string) {

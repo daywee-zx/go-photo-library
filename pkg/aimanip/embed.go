@@ -15,10 +15,10 @@ type EmbedRequest struct {
 }
 
 type EmbedResponse struct {
-	Embeddings [][]float64 `json:"embeddings"`
+	Embeddings [][]float32 `json:"embeddings"`
 }
 
-func Embed(input []string) ([][]float64, error) {
+func Embed(input []string) ([][]float32, error) {
 	modelName := "bge-m3"
 
 	reqBody := EmbedRequest{
@@ -53,7 +53,7 @@ func Embed(input []string) ([][]float64, error) {
 }
 
 // for testing
-func CosineSimilarity(a, b []float64) float64 {
+func CosineSimilarity(a, b []float32) float32 {
 	if len(a) != len(b) || len(a) == 0 {
 		return 0
 	}
@@ -61,14 +61,16 @@ func CosineSimilarity(a, b []float64) float64 {
 	var dot, normA, normB float64
 
 	for i := range a {
-		dot += a[i] * b[i]
-		normA += a[i] * a[i]
-		normB += b[i] * b[i]
+		ax := float64(a[i])
+		bx := float64(b[i])
+		dot += ax * bx
+		normA += ax * ax
+		normB += bx * bx
 	}
 
 	if normA == 0 || normB == 0 {
 		return 0
 	}
 
-	return dot / (math.Sqrt(normA) * math.Sqrt(normB))
+	return float32(dot / (math.Sqrt(normA) * math.Sqrt(normB)))
 }
