@@ -12,8 +12,8 @@ import (
 
 const (
 	defaultTagWeight    float32 = 0.2
-	defualtVisualWeight float32 = 0.4
-	defaultTextWeight    float32 = 0.4
+	defaultVisualWeight float32 = 0.4
+	defaultTextWeight   float32 = 0.4
 )
 
 type Storage struct {
@@ -21,7 +21,7 @@ type Storage struct {
 
 	tagSearchWeight    float32
 	visualSearchWeight float32
-	textSearchWeight    float32
+	textSearchWeight   float32
 }
 
 type Entry struct {
@@ -34,7 +34,7 @@ type IndexedEntry struct {
 	Entry
 
 	VisualEmbed []float32 `json:"visual_embedding"`
-	OCDEmbed    []float32 `json:"ocd_embedding"`
+	TextEmbed   []float32 `json:"ocd_embedding"`
 }
 
 func NewStorage(path string) (*Storage, error) {
@@ -46,8 +46,8 @@ func NewStorage(path string) (*Storage, error) {
 	storage := &Storage{
 		db:                 db,
 		tagSearchWeight:    defaultTagWeight,
-		visualSearchWeight: defualtVisualWeight,
-		textSearchWeight:    defaultTextWeight,
+		visualSearchWeight: defaultVisualWeight,
+		textSearchWeight:   defaultTextWeight,
 	}
 	return storage, nil
 }
@@ -111,58 +111,62 @@ func (s *Storage) Init() error {
 	return nil
 }
 
-func (s *Storage) InsertEntry(e IndexedEntry) error {
+func (s *Storage) InsertEntry(e IndexedEntry) (int64, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer tx.Rollback()
 
 	res, err := tx.Exec(`
-		INSERT INTO entries (id, path) VALUES (?, ?)
-	`, e.ID, e.Path)
+		INSERT INTO entries (path) VALUES (?)
+	`, e.Path)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	entryID, err := res.LastInsertId()
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	err = insertTags(tx, entryID, e.Tags)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	visualEmbedJSON, err := json.Marshal(e.VisualEmbed)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	_, err = tx.Exec(`
 		INSERT INTO visual_embeddings (rowid, embedding) VALUES (?, ?)
 	`, entryID, string(visualEmbedJSON))
 	if err != nil {
-		return err
+		return 0, err
 	}
 
-	ocdEmbedJSON, err := json.Marshal(e.OCDEmbed)
+	textEmbedJSON, err := json.Marshal(e.TextEmbed)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	_, err = tx.Exec(`
 		INSERT INTO ocd_embeddings (rowid, embedding) VALUES (?, ?)
-	`, entryID, string(ocdEmbedJSON))
+	`, entryID, string(textEmbedJSON))
 	if err != nil {
-		return err
+		return 0, err
 	}
 
-	return tx.Commit()
+	return entryID, tx.Commit()
 }
 
 func insertTags(tx *sql.Tx, entryID int64, tags []string) error {
+	if len(tags) == 0 {
+		return nil
+	}
+
 	placeholders := make([]string, len(tags))
 	for i := range tags {
 		placeholders[i] = "(?)"

@@ -2,44 +2,13 @@ package main
 
 import (
 	"fmt"
-	"memeLibrary/pkg/aimanip"
-	"memeLibrary/pkg/storage"
+	"photoLibrary/pkg/aimanip"
+	photolib "photoLibrary/pkg/photoLib"
+	"photoLibrary/pkg/storage"
 	"time"
 )
 
 func main() {
-
-	/*path := "test_images/test%d.jpg"
-	entries := []storage.IndexedEntry{}
-
-	for i := 1; i <= 4; i++ {
-		imagePath := fmt.Sprintf(path, i)
-		tagResp, err := aimanip.TagImage(imagePath)
-		if err != nil {
-			fmt.Printf("Error tagging image %s: %v\n", imagePath, err)
-			continue
-		}
-
-		embeds, err := aimanip.Embed([]string{tagResp.Description, tagResp.Text})
-		if err != nil {
-			fmt.Printf("Error embedding image %s: %v\n", imagePath, err)
-			continue
-		}
-		visual, ocd := embeds[0], embeds[1]
-		fmt.Printf("visual embedding length: %d, ocd embedding length: %d\n", len(visual), len(ocd))
-		fmt.Printf("Image: %s\nDescription: %s\n\n", imagePath, tagResp.Description)
-
-		entries = append(entries, storage.IndexedEntry{
-			Entry: storage.Entry{
-				ID:   int64(i),
-				Path: imagePath,
-				Tags: tagResp.Tags,
-			},
-			VisualEmbed: visual,
-			OCDEmbed:    ocd,
-		})
-	}*/
-
 	dbPath := "test_images/test.db"
 	storage, err := storage.NewStorage(dbPath)
 	if err != nil {
@@ -54,15 +23,32 @@ func main() {
 		return
 	}
 
-	/*
-		for _, entry := range entries {
-			err = storage.InsertEntry(entry)
-			if err != nil {
-				fmt.Printf("Error inserting entry for image %s: %v\n", entry.Path, err)
-				continue
-			}
-			fmt.Printf("Inserted entry for image %s successfully.\n", entry.Path)
-		}*/
+	tagWeight, visualWeight, textWeight := 0.2, 0.4, 0.4
+
+	lib := photolib.NewPhotoLib(
+		storage,
+		aimanip.Embedder{
+			ModelName: "bge-m3",
+			URL:       "http://localhost:11434/api/embed",
+		},
+		aimanip.Tagger{
+			ModelName: "qwen2.5vl",
+			URL:       "http://localhost:11434/api/chat",
+		},
+		photolib.NewSearchConfig(float32(tagWeight), float32(visualWeight), float32(textWeight)),
+	)
+
+	path := "test_images/test%d.jpg"
+
+	for i := 1; i <= 4; i++ {
+		nowPath := fmt.Sprintf(path, i)
+		id, err := lib.AddImage(nowPath)
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+		fmt.Printf("Image %s successfully inserted at id %d\n", nowPath, id)
+	}
 
 	testCases := []struct {
 		request    string
@@ -77,24 +63,9 @@ func main() {
 		{"where is the border sergeant", 1},
 	}
 
-
 	for _, v := range testCases {
-
-		embeddings, err := aimanip.Embed([]string{v.request})
-		if err != nil {
-			fmt.Println(err)
-		}
-		embedding := embeddings[0]
-
-		tags, err := aimanip.TagRequest(v.request)
-		if err != nil {
-			fmt.Println(err)
-		}
-
-		//fmt.Printf("Request: %s. Tags: %v\n", v.request, tags)
-
 		now := time.Now()
-		entry, err := storage.Search(tags, embedding)
+		entry, err := lib.Search(v.request)
 		if err != nil {
 			fmt.Println(err)
 		}

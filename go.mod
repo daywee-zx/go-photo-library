@@ -1,4 +1,4 @@
-module memeLibrary
+module photoLibrary
 
 go 1.25.1
 

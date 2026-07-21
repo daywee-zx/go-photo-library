@@ -5,9 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 )
+
+type Embedder struct {
+	ModelName string
+	URL       string
+}
 
 type EmbedRequest struct {
 	Model string   `json:"model"`
@@ -18,8 +22,8 @@ type EmbedResponse struct {
 	Embeddings [][]float32 `json:"embeddings"`
 }
 
-func Embed(input []string) ([][]float32, error) {
-	modelName := "bge-m3"
+func (e Embedder) Embed(input []string) ([][]float32, error) {
+	modelName := e.ModelName
 
 	reqBody := EmbedRequest{
 		Model: modelName,
@@ -30,7 +34,7 @@ func Embed(input []string) ([][]float32, error) {
 		return nil, fmt.Errorf("Error occurred while marshaling request body:%v", err)
 	}
 
-	url := "http://localhost:11434/api/embed"
+	url := e.URL
 
 	resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
 	if err != nil {
@@ -50,27 +54,4 @@ func Embed(input []string) ([][]float32, error) {
 	}
 
 	return embedResp.Embeddings, nil
-}
-
-// for testing
-func CosineSimilarity(a, b []float32) float32 {
-	if len(a) != len(b) || len(a) == 0 {
-		return 0
-	}
-
-	var dot, normA, normB float64
-
-	for i := range a {
-		ax := float64(a[i])
-		bx := float64(b[i])
-		dot += ax * bx
-		normA += ax * ax
-		normB += bx * bx
-	}
-
-	if normA == 0 || normB == 0 {
-		return 0
-	}
-
-	return float32(dot / (math.Sqrt(normA) * math.Sqrt(normB)))
 }
