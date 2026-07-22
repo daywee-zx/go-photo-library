@@ -34,7 +34,7 @@ type IndexedEntry struct {
 	Entry
 
 	VisualEmbed []float32 `json:"visual_embedding"`
-	TextEmbed   []float32 `json:"ocd_embedding"`
+	TextEmbed   []float32 `json:"ocr_embedding"`
 }
 
 func NewStorage(path string) (*Storage, error) {
@@ -100,7 +100,7 @@ func (s *Storage) Init() error {
 	}
 
 	_, err = s.db.Exec(`
-		CREATE VIRTUAL TABLE IF NOT EXISTS ocd_embeddings 
+		CREATE VIRTUAL TABLE IF NOT EXISTS ocr_embeddings 
 		USING vec0(
 		embedding float[1024])
 	`)
@@ -153,7 +153,7 @@ func (s *Storage) InsertEntry(e IndexedEntry) (int64, error) {
 	}
 
 	_, err = tx.Exec(`
-		INSERT INTO ocd_embeddings (rowid, embedding) VALUES (?, ?)
+		INSERT INTO ocr_embeddings (rowid, embedding) VALUES (?, ?)
 	`, entryID, string(textEmbedJSON))
 	if err != nil {
 		return 0, err

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"photoLibrary/pkg/aimanip"
 	photolib "photoLibrary/pkg/photoLib"
@@ -23,9 +24,12 @@ func main() {
 		return
 	}
 
+	ctx := context.Background()
+
 	tagWeight, visualWeight, textWeight := 0.2, 0.4, 0.4
 
 	lib := photolib.NewPhotoLib(
+		ctx,
 		storage,
 		aimanip.Embedder{
 			ModelName: "bge-m3",

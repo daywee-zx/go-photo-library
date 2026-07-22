@@ -1,6 +1,7 @@
 package photolib
 
 import (
+	"context"
 	"fmt"
 	"photoLibrary/pkg/aimanip"
 	"photoLibrary/pkg/storage"
@@ -17,7 +18,7 @@ type Tagger interface {
 
 type StorageBack interface {
 	InsertEntry(storage.IndexedEntry) (int64, error)
-	Search(tags []string, queryEmbed []float32) (storage.Entry, error)
+	Search(ctx context.Context, tags []string, queryEmbed []float32) (storage.Entry, error)
 	SetSearchWeights(tag, visual, text float32)
 	Close() error
 }
@@ -33,14 +34,17 @@ type PhotoLib struct {
 	embedder Embedder
 	tagger   Tagger
 	config   SearchConfig
+
+	ctx context.Context
 }
 
-func NewPhotoLib(store StorageBack, embedder Embedder, tagger Tagger, config SearchConfig) *PhotoLib {
+func NewPhotoLib(ctx context.Context, store StorageBack, embedder Embedder, tagger Tagger, config SearchConfig) *PhotoLib {
 	return &PhotoLib{
 		store:    store,
 		embedder: embedder,
 		tagger:   tagger,
 		config:   config,
+		ctx:      ctx,
 	}
 }
 
@@ -110,7 +114,7 @@ func (p *PhotoLib) Search(request string) (storage.Entry, error) {
 
 	p.UpdateSearchWeights()
 
-	entry, err := p.store.Search(tags, embedding)
+	entry, err := p.store.Search(p.ctx, tags, embedding)
 	if err != nil {
 		return storage.Entry{}, err
 	}
