@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -17,41 +18,60 @@ type searchResult struct {
 	Err error
 }
 
-func (s *Storage) Search(tags []string, queryEmbed []float32) (Entry, error) {
+func (s *Storage) Search(ctx context.Context, tags []string, queryEmbed []float32) (Entry, error) {
 	tagCh := make(chan searchResult, 1)
 	visCh := make(chan searchResult, 1)
 	textCh := make(chan searchResult, 1)
 
+	var (
+		tagRes, visRes, textRes searchResult
+		gotTag, gotVis, gotText bool
+	)
+
+	subCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	if s.tagSearchWeight != 0 {
-		go func() { hits, err := s.TagSearch(tags); tagCh <- searchResult{hits, err} }()
+		go func() { hits, err := s.TagSearch(subCtx, tags); tagCh <- searchResult{hits, err} }()
 	} else {
 		tagCh <- searchResult{}
 	}
 
 	if s.visualSearchWeight != 0 {
-		go func() { hits, err := s.VisualSearch(queryEmbed); visCh <- searchResult{hits, err} }()
+		go func() { hits, err := s.VisualSearch(subCtx, queryEmbed); visCh <- searchResult{hits, err} }()
 	} else {
 		visCh <- searchResult{}
 	}
 
 	if s.textSearchWeight != 0 {
-		go func() { hits, err := s.TextSearch(queryEmbed); textCh <- searchResult{hits, err} }()
+		go func() { hits, err := s.TextSearch(subCtx, queryEmbed); textCh <- searchResult{hits, err} }()
 	} else {
 		textCh <- searchResult{}
 	}
 
-	tagRes := <-tagCh
-	visRes := <-visCh
-	textRes := <-textCh
-
-	if tagRes.Err != nil {
-		return Entry{}, tagRes.Err
-	}
-	if visRes.Err != nil {
-		return Entry{}, visRes.Err
-	}
-	if textRes.Err != nil {
-		return Entry{}, textRes.Err
+	for !gotTag || !gotVis || !gotText {
+		select {
+		case tagRes = <-tagCh:
+			gotTag = true
+			if tagRes.Err != nil {
+				cancel()
+				return Entry{}, tagRes.Err
+			}
+		case visRes = <-visCh:
+			gotVis = true
+			if visRes.Err != nil {
+				cancel()
+				return Entry{}, visRes.Err
+			}
+		case textRes = <-textCh:
+			gotText = true
+			if textRes.Err != nil {
+				cancel()
+				return Entry{}, textRes.Err
+			}
+		case <-ctx.Done():
+			return Entry{}, ctx.Err()
+		}
 	}
 
 	entries := make(map[int64]float32)
@@ -85,7 +105,7 @@ func (s *Storage) Search(tags []string, queryEmbed []float32) (Entry, error) {
 	return res, nil
 }
 
-func (s *Storage) TagSearch(tags []string) ([]HitScore, error) {
+func (s *Storage) TagSearch(ctx context.Context, tags []string) ([]HitScore, error) {
 	result := make([]HitScore, 0)
 
 	if len(tags) <= 0 {
@@ -111,7 +131,7 @@ func (s *Storage) TagSearch(tags []string) ([]HitScore, error) {
 		ORDER BY matches DESC;
 	`, placeholder)
 
-	rows, err := s.db.Query(query, tagsArgs...)
+	rows, err := s.db.QueryContext(ctx, query, tagsArgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -133,36 +153,36 @@ func (s *Storage) TagSearch(tags []string) ([]HitScore, error) {
 	}
 
 	if rows.Err() != nil {
-		return nil, err
+		return nil, rows.Err()
 	}
 
 	return result, nil
 }
 
-func (s *Storage) VisualSearch(embedding []float32) ([]HitScore, error) {
-	return s.embeddingSearch(embedding, "visual_embeddings")
+func (s *Storage) VisualSearch(ctx context.Context, embedding []float32) ([]HitScore, error) {
+	return s.embeddingSearch(ctx, embedding, "visual_embeddings")
 }
 
-func (s *Storage) TextSearch(embedding []float32) ([]HitScore, error) {
-	return s.embeddingSearch(embedding, "ocd_embeddings")
+func (s *Storage) TextSearch(ctx context.Context, embedding []float32) ([]HitScore, error) {
+	return s.embeddingSearch(ctx, embedding, "ocr_embeddings")
 }
 
-func (s *Storage) embeddingSearch(embedding []float32, tableName string) ([]HitScore, error) {
+func (s *Storage) embeddingSearch(ctx context.Context, embedding []float32, tableName string) ([]HitScore, error) {
 	result := make([]HitScore, 0)
 
 	query := fmt.Sprintf(`
-		SELECT rowid, distance
-		FROM %s
-		WHERE embedding MATCH ?
-		ORDER BY distance
-		LIMIT 50;`, tableName)
+			SELECT rowid, distance
+			FROM %s
+			WHERE embedding MATCH ?
+			ORDER BY distance
+			LIMIT 50;`, tableName)
 
 	embedJSON, err := json.Marshal(embedding)
 	if err != nil {
-		return nil, err
+		return result, err
 	}
 
-	rows, err := s.db.Query(query, string(embedJSON))
+	rows, err := s.db.QueryContext(ctx, query, string(embedJSON))
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +204,7 @@ func (s *Storage) embeddingSearch(embedding []float32, tableName string) ([]HitS
 	}
 
 	if rows.Err() != nil {
-		return nil, err
+		return nil, rows.Err()
 	}
 
 	return result, nil
