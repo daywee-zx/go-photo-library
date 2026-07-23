@@ -18,6 +18,7 @@ type Tagger interface {
 
 type StorageBack interface {
 	InsertEntry(storage.IndexedEntry) (int64, error)
+	DeleteEntry(int64) error
 	Search(ctx context.Context, tags []string, queryEmbed []float32) (storage.Entry, error)
 	SetSearchWeights(tag, visual, text float32)
 	Close() error
@@ -120,4 +121,12 @@ func (p *PhotoLib) Search(request string) (storage.Entry, error) {
 	}
 
 	return entry, nil
+}
+
+func (p *PhotoLib) InsertEntry(e storage.IndexedEntry) (int64, error) {
+	return p.store.InsertEntry(e)
+}
+
+func (p *PhotoLib) DeleteEntry(id int64) error {
+	return p.store.DeleteEntry(id)
 }
