@@ -75,4 +75,12 @@ func main() {
 		}
 		fmt.Printf("Request: %s. Want: %d. Result: %d. Time elapsed: %v\n", v.request, v.expectedID, entry.ID, time.Since(now))
 	}
+
+	for i := 1; i <= 4; i++ {
+
+		if err = lib.DeleteEntry(int64(i)); err != nil {
+			fmt.Printf("Error occured while deleting: %v\n", err)
+		}
+		fmt.Printf("Successfully deleted id %d\n", i)
+	}
 }

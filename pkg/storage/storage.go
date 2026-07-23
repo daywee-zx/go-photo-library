@@ -82,10 +82,15 @@ func (s *Storage) Init() error {
 			entry_id INTEGER NOT NULL,
 			tag_id INTEGER NOT NULL,
 			PRIMARY KEY (entry_id, tag_id),
-			FOREIGN KEY (entry_id) REFERENCES entries(id),
-			FOREIGN KEY (tag_id) REFERENCES tags(id)
+			FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE,
+			FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
 		)
 	`)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_entry_tags_tag ON entry_tags(tag_id);`)
 	if err != nil {
 		return err
 	}
@@ -104,6 +109,11 @@ func (s *Storage) Init() error {
 		USING vec0(
 		embedding float[1024])
 	`)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.Exec("PRAGMA foreign_keys = ON")
 	if err != nil {
 		return err
 	}
@@ -228,6 +238,39 @@ func (s *Storage) GetEntry(entryID int64) (Entry, error) {
 		path,
 		make([]string, 0),
 	}, nil
+}
+
+func (s *Storage) DeleteEntry(entryID int64) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec(`DELETE FROM visual_embeddings WHERE rowid = ?`, entryID)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(`DELETE FROM ocr_embeddings WHERE rowid = ?`, entryID)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(`DELETE FROM entries WHERE id = ?`, entryID)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(`
+		DELETE FROM tags
+		WHERE id NOT IN (
+			SELECT DISTINCT tag_id
+			FROM entry_tags
+		)
+	`)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (s *Storage) SetSearchWeights(tag, visual, text float32) {
