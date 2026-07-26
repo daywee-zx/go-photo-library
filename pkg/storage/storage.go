@@ -37,19 +37,13 @@ type IndexedEntry struct {
 	TextEmbed   []float32 `json:"ocr_embedding"`
 }
 
-func NewStorage(path string) (*Storage, error) {
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		return nil, err
-	}
-
-	storage := &Storage{
+func NewStorage(db *sql.DB) *Storage {
+	return &Storage{
 		db:                 db,
 		tagSearchWeight:    defaultTagWeight,
 		visualSearchWeight: defaultVisualWeight,
 		textSearchWeight:   defaultTextWeight,
 	}
-	return storage, nil
 }
 
 func (s *Storage) Close() error {
@@ -60,7 +54,7 @@ func (s *Storage) Init() error {
 	_, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS entries (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			path TEXT NOT NULL
+			path TEXT NOT NULL UNIQUE
 		)
 	`)
 	if err != nil {
@@ -122,6 +116,10 @@ func (s *Storage) Init() error {
 }
 
 func (s *Storage) InsertEntry(e IndexedEntry) (int64, error) {
+	if e.Path == "" {
+		return 0, fmt.Errorf("no path for entry specified")
+	}
+
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, err
@@ -217,27 +215,66 @@ func insertTags(tx *sql.Tx, entryID int64, tags []string) error {
 }
 
 func (s *Storage) GetEntry(entryID int64) (Entry, error) {
+	if entryID < 0 {
+		return Entry{}, fmt.Errorf("id can not be negative")
+	}
+
 	query := `
-		SELECT path 
-		FROM entries
-		WHERE id = ?
+		SELECT e.path, GROUP_CONCAT(t.name, ', ') AS tags
+		FROM entries e
+		LEFT JOIN entry_tags et ON et.entry_id = e.id
+		LEFT JOIN tags t ON t.id = et.tag_id
+		WHERE e.id = ?
+		GROUP BY e.id, e.path
 	`
 
 	row := s.db.QueryRow(query, entryID)
 
 	var path string
+	var tags sql.NullString
 
-	err := row.Scan(&path)
+	err := row.Scan(&path, &tags)
 	if err != nil {
 		return Entry{}, err
 	}
 
-	//TODO return tags
+	var tagList []string
+	if tags.Valid {
+		tagList = strings.Split(tags.String, ", ")
+	}
+
 	return Entry{
 		entryID,
 		path,
-		make([]string, 0),
+		tagList,
 	}, nil
+}
+func (s *Storage) GetTags(entryID int64) ([]string, error) {
+	if entryID < 0 {
+		return nil, fmt.Errorf("id can not be negative")
+	}
+
+	query := `
+		SELECT GROUP_CONCAT(t.name, ', ') AS tags
+		FROM entry_tags et
+		LEFT JOIN tags t ON t.id = et.tag_id
+		WHERE et.entry_id = ?
+	`
+	row := s.db.QueryRow(query, entryID)
+
+	var tags sql.NullString
+
+	err := row.Scan(&tags)
+	if err != nil {
+		return nil, err
+	}
+
+	var tagList []string
+	if tags.Valid {
+		tagList = strings.Split(tags.String, ", ")
+	}
+
+	return tagList, nil
 }
 
 func (s *Storage) DeleteEntry(entryID int64) error {

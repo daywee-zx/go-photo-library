@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"photoLibrary/pkg/aimanip"
 	photolib "photoLibrary/pkg/photoLib"
@@ -11,7 +12,12 @@ import (
 
 func main() {
 	dbPath := "test_images/test.db"
-	storage, err := storage.NewStorage(dbPath)
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return
+	}
+	storage := storage.NewStorage(db)
 	if err != nil {
 		fmt.Printf("Error initializing storage: %v\n", err)
 		return
