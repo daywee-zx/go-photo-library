@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"photoLibrary/pkg/aimanip"
-	photolib "photoLibrary/pkg/photoLib"
-	"photoLibrary/pkg/storage"
 	"time"
+
+	photolib "github.com/daywee-zx/go-photo-library/pkg/photoLib"
+
+	"github.com/daywee-zx/go-photo-library/pkg/aimanip"
+	"github.com/daywee-zx/go-photo-library/pkg/storage"
 )
 
 func main() {
@@ -75,11 +77,11 @@ func main() {
 
 	for _, v := range testCases {
 		now := time.Now()
-		entry, err := lib.Search(v.request)
+		entries, err := lib.Search(v.request, 1)
 		if err != nil {
 			fmt.Println(err)
 		}
-		fmt.Printf("Request: %s. Want: %d. Result: %d. Time elapsed: %v\n", v.request, v.expectedID, entry.ID, time.Since(now))
+		fmt.Printf("Request: %s. Want: %d. Result: %d. Time elapsed: %v\n", v.request, v.expectedID, entries[0].ID, time.Since(now))
 	}
 
 	for i := 1; i <= 4; i++ {

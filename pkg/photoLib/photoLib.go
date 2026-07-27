@@ -3,8 +3,9 @@ package photolib
 import (
 	"context"
 	"fmt"
-	"photoLibrary/pkg/aimanip"
-	"photoLibrary/pkg/storage"
+
+	"github.com/daywee-zx/go-photo-library/pkg/aimanip"
+	"github.com/daywee-zx/go-photo-library/pkg/storage"
 )
 
 type Embedder interface {
@@ -19,7 +20,7 @@ type Tagger interface {
 type StorageBack interface {
 	InsertEntry(storage.IndexedEntry) (int64, error)
 	DeleteEntry(int64) error
-	Search(ctx context.Context, tags []string, queryEmbed []float32) (storage.Entry, error)
+	Search(ctx context.Context, tags []string, queryEmbed []float32, topK int) ([]storage.Entry, error)
 	SetSearchWeights(tag, visual, text float32)
 	Close() error
 }
@@ -88,7 +89,7 @@ func NewSearchConfig(tag, visual, text float32) SearchConfig {
 	return SearchConfig{tag, visual, text}
 }
 
-func (p *PhotoLib) Search(request string) (storage.Entry, error) {
+func (p *PhotoLib) Search(request string, topK int) ([]storage.Entry, error) {
 	embeddingCh := make(chan []float32, 1)
 	tagsCh := make(chan []string, 1)
 	errorCh := make(chan error, 2)
@@ -109,18 +110,18 @@ func (p *PhotoLib) Search(request string) (storage.Entry, error) {
 	tags := <-tagsCh
 	for i := 0; i < 2; i++ {
 		if err := <-errorCh; err != nil {
-			return storage.Entry{}, err
+			return nil, err
 		}
 	}
 
 	p.UpdateSearchWeights()
 
-	entry, err := p.store.Search(p.ctx, tags, embedding)
+	entries, err := p.store.Search(p.ctx, tags, embedding, topK)
 	if err != nil {
-		return storage.Entry{}, err
+		return nil, err
 	}
 
-	return entry, nil
+	return entries, nil
 }
 
 func (p *PhotoLib) InsertEntry(e storage.IndexedEntry) (int64, error) {

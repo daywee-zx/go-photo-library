@@ -1,4 +1,4 @@
-module photoLibrary
+module github.com/daywee-zx/go-photo-library
 
 go 1.25.1
 
