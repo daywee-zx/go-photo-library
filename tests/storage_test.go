@@ -131,7 +131,7 @@ func TestDeleteEntry(t *testing.T) {
 	assert.Equal(t, "", entry.Path, "entry was not deleted")
 
 	// ensure others' tags were not cascade deleted
-	tags, err := store.GetTags(ids[2])
+	tags, err := store.GetEntryTags(ctx, ids[2])
 	assert.Len(t, tags, 2, "entry has unsufficient tags")
 
 	// delete remaining

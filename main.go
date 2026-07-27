@@ -20,10 +20,6 @@ func main() {
 		return
 	}
 	storage := storage.NewStorage(db)
-	if err != nil {
-		fmt.Printf("Error initializing storage: %v\n", err)
-		return
-	}
 	defer storage.Close()
 
 	err = storage.Init()

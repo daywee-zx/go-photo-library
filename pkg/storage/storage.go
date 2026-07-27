@@ -16,7 +16,7 @@ const (
 	defaultVisualWeight float32 = 0.4
 	defaultTextWeight   float32 = 0.4
 
-	textFormat string = "200601021504"
+	timeFormat string = "200601021504"
 )
 
 type Storage struct {
@@ -263,34 +263,6 @@ func (s *Storage) GetEntry(ctx context.Context, entryID int64) (Entry, error) {
 	}, nil
 }
 
-func (s *Storage) GetTags(entryID int64) ([]string, error) {
-	if entryID < 0 {
-		return nil, fmt.Errorf("id can not be negative")
-	}
-
-	query := `
-		SELECT GROUP_CONCAT(t.name, ', ') AS tags
-		FROM entry_tags et
-		LEFT JOIN tags t ON t.id = et.tag_id
-		WHERE et.entry_id = ?
-	`
-	row := s.db.QueryRow(query, entryID)
-
-	var tags sql.NullString
-
-	err := row.Scan(&tags)
-	if err != nil {
-		return nil, err
-	}
-
-	var tagList []string
-	if tags.Valid {
-		tagList = strings.Split(tags.String, ", ")
-	}
-
-	return tagList, nil
-}
-
 func (s *Storage) DeleteEntry(entryID int64) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -322,6 +294,64 @@ func (s *Storage) DeleteEntry(entryID int64) error {
 	}
 
 	return tx.Commit()
+}
+
+func (s *Storage) GetEntryTags(ctx context.Context, entryID int64) ([]string, error) {
+	if entryID < 0 {
+		return nil, fmt.Errorf("id can not be negative")
+	}
+
+	query := `
+		SELECT GROUP_CONCAT(t.name, ', ') AS tags
+		FROM entry_tags et
+		LEFT JOIN tags t ON t.id = et.tag_id
+		WHERE et.entry_id = ?
+	`
+	row := s.db.QueryRowContext(ctx, query, entryID)
+	if row.Err() != nil {
+		return nil, row.Err()
+	}
+
+	var tags sql.NullString
+
+	err := row.Scan(&tags)
+	if err != nil {
+		return nil, err
+	}
+
+	var tagList []string
+	if tags.Valid {
+		tagList = strings.Split(tags.String, ", ")
+	}
+
+	return tagList, nil
+}
+
+func (s *Storage) GetAvailableTags(ctx context.Context) ([]string, error) {
+	query := `
+		SELECT GROUP_CONCAT(name, ', ') AS tags
+		FROM tags
+	`
+
+	row := s.db.QueryRowContext(ctx, query)
+
+	if row.Err() != nil {
+		return nil, row.Err()
+	}
+
+	var tags sql.NullString
+
+	err := row.Scan(&tags)
+	if err != nil {
+		return nil, err
+	}
+
+	var tagList []string
+	if tags.Valid {
+		tagList = strings.Split(tags.String, ", ")
+	}
+
+	return tagList, nil
 }
 
 func (s *Storage) SetSearchWeights(tag, visual, text float32) {

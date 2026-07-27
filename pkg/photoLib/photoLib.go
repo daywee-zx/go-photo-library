@@ -20,6 +20,11 @@ type Tagger interface {
 type StorageBack interface {
 	InsertEntry(storage.IndexedEntry) (int64, error)
 	DeleteEntry(int64) error
+
+	GetEntry(context.Context, int64) (storage.Entry, error)
+	GetEntryTags(context.Context, int64) ([]string, error)
+	GetAvailableTags(context.Context) ([]string, error)
+
 	Search(ctx context.Context, tags []string, queryEmbed []float32, topK int) ([]storage.Entry, error)
 	SetSearchWeights(tag, visual, text float32)
 	Close() error
