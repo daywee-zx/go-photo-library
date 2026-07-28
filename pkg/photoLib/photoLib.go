@@ -13,20 +13,20 @@ type Embedder interface {
 }
 
 type Tagger interface {
-	TagImage(ctx context.Context, path string) (aimanip.TagImageData, error)
-	TagRequest(ctx context.Context, request string) ([]string, error)
+	TagImage(context.Context, string) (aimanip.TagImageData, error)
+	TagRequest(context.Context, string) ([]string, error)
 }
 
 type StorageBack interface {
-	InsertEntry(storage.IndexedEntry) (int64, error)
-	DeleteEntry(int64) error
+	InsertEntry(context.Context, storage.IndexedEntry) (int64, error)
+	DeleteEntry(context.Context, int64) error
 
 	GetEntry(context.Context, int64) (storage.Entry, error)
 	GetEntryTags(context.Context, int64) ([]string, error)
 	GetAvailableTags(context.Context) ([]string, error)
 
-	Search(ctx context.Context, tags []string, queryEmbed []float32, topK int) ([]storage.Entry, error)
-	SetSearchWeights(tag, visual, text float32)
+	Search(context.Context, []string, []float32, int) ([]storage.Entry, error)
+	SetSearchWeights(float32, float32, float32)
 	Close() error
 }
 
@@ -72,7 +72,7 @@ func (p *PhotoLib) AddImage(ctx context.Context, e storage.Entry) (int64, error)
 	entry.Tags = append(e.Tags, tagResp.Tags...)
 	entry.Description = tagResp.Description
 
-	id, err := p.store.InsertEntry(entry)
+	id, err := p.store.InsertEntry(ctx, entry)
 	if err != nil {
 		return 0, fmt.Errorf("Error during adding entry %s:%v", e.Path, err)
 	}
@@ -125,12 +125,12 @@ func (p *PhotoLib) Search(ctx context.Context, request string, topK int) ([]stor
 	return entries, nil
 }
 
-func (p *PhotoLib) InsertEntry(e storage.IndexedEntry) (int64, error) {
-	return p.store.InsertEntry(e)
+func (p *PhotoLib) InsertEntry(ctx context.Context, e storage.IndexedEntry) (int64, error) {
+	return p.store.InsertEntry(ctx, e)
 }
 
-func (p *PhotoLib) DeleteEntry(id int64) error {
-	return p.store.DeleteEntry(id)
+func (p *PhotoLib) DeleteEntry(ctx context.Context, id int64) error {
+	return p.store.DeleteEntry(ctx, id)
 }
 
 func (p *PhotoLib) GetEntry(ctx context.Context, id int64) (storage.Entry, error) {

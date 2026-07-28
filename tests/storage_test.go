@@ -62,7 +62,7 @@ func TestInsertEntry(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			id, err := store.InsertEntry(tc.entry)
+			id, err := store.InsertEntry(context.Background(), tc.entry)
 			if tc.wantErr {
 				require.Error(t, err, "expected an error")
 				return
@@ -111,7 +111,7 @@ func TestDeleteEntry(t *testing.T) {
 	}
 	var ids []int64
 	for _, e := range entries {
-		id, err := store.InsertEntry(e)
+		id, err := store.InsertEntry(context.Background(), e)
 		require.NoError(t, err, "error not expected while inserting")
 		ids = append(ids, id)
 	}

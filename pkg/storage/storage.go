@@ -123,12 +123,12 @@ func (s *Storage) Init() error {
 	return nil
 }
 
-func (s *Storage) InsertEntry(e IndexedEntry) (int64, error) {
+func (s *Storage) InsertEntry(ctx context.Context, e IndexedEntry) (int64, error) {
 	if e.Path == "" {
 		return 0, fmt.Errorf("no path for entry specified")
 	}
 
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -146,7 +146,7 @@ func (s *Storage) InsertEntry(e IndexedEntry) (int64, error) {
 		return 0, err
 	}
 
-	err = insertTags(tx, entryID, e.Tags)
+	err = insertTags(ctx, tx, entryID, e.Tags)
 	if err != nil {
 		return 0, err
 	}
@@ -178,7 +178,7 @@ func (s *Storage) InsertEntry(e IndexedEntry) (int64, error) {
 	return entryID, tx.Commit()
 }
 
-func insertTags(tx *sql.Tx, entryID int64, tags []string) error {
+func insertTags(ctx context.Context, tx *sql.Tx, entryID int64, tags []string) error {
 	if len(tags) == 0 {
 		return nil
 	}
@@ -199,7 +199,7 @@ func insertTags(tx *sql.Tx, entryID int64, tags []string) error {
 		INSERT OR IGNORE INTO tags (name) VALUES %s
 	`, placeholder)
 
-	_, err := tx.Exec(query, args...)
+	_, err := tx.ExecContext(ctx, query, args...)
 	if err != nil {
 		return err
 	}
@@ -214,7 +214,7 @@ func insertTags(tx *sql.Tx, entryID int64, tags []string) error {
 	entryArgs := make([]any, 1)
 	entryArgs[0] = entryID
 	entryArgs = append(entryArgs, args...)
-	_, err = tx.Exec(query, entryArgs...)
+	_, err = tx.ExecContext(ctx, query, entryArgs...)
 	if err != nil {
 		return err
 	}
