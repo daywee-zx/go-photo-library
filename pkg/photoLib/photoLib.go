@@ -135,3 +135,7 @@ func (p *PhotoLib) InsertEntry(e storage.IndexedEntry) (int64, error) {
 func (p *PhotoLib) DeleteEntry(id int64) error {
 	return p.store.DeleteEntry(id)
 }
+
+func (p *PhotoLib) GetEntry(id int64) (storage.Entry, error) {
+	return p.store.GetEntry(p.ctx, id)
+}
