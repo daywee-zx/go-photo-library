@@ -55,30 +55,29 @@ func NewPhotoLib(ctx context.Context, store StorageBack, embedder Embedder, tagg
 	}
 }
 
-func (p *PhotoLib) AddImage(path string) (int64, error) {
-	tagResp, err := p.tagger.TagImage(path)
+func (p *PhotoLib) AddImage(e storage.Entry) (int64, error) {
+	tagResp, err := p.tagger.TagImage(e.Path)
 	if err != nil {
-		return 0, fmt.Errorf("Error tagging the image %s:%v", path, err)
+		return 0, fmt.Errorf("Error tagging the image %s:%v", e.Path, err)
 	}
 
 	embeds, err := p.embedder.Embed([]string{tagResp.Description, tagResp.Text})
 	if err != nil {
-		return 0, fmt.Errorf("Error embedding image descriptions %s:%v", path, err)
+		return 0, fmt.Errorf("Error embedding image descriptions %s:%v", e.Path, err)
 	}
 
 	entry := storage.IndexedEntry{
-		Entry: storage.Entry{
-			ID:   0,
-			Path: path,
-			Tags: tagResp.Tags,
-		},
+		Entry:       e,
 		VisualEmbed: embeds[0],
 		TextEmbed:   embeds[1],
 	}
 
+	entry.Tags = append(e.Tags, tagResp.Tags...)
+	entry.Description = tagResp.Description
+
 	id, err := p.store.InsertEntry(entry)
 	if err != nil {
-		return 0, fmt.Errorf("Error during adding entry %s:%v", path, err)
+		return 0, fmt.Errorf("Error during adding entry %s:%v", e.Path, err)
 	}
 
 	return id, nil
