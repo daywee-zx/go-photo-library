@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,8 @@ const (
 	defaultTagWeight    float32 = 0.2
 	defaultVisualWeight float32 = 0.4
 	defaultTextWeight   float32 = 0.4
+
+	timeFormat string = "200601021504"
 )
 
 type Storage struct {
@@ -25,9 +28,12 @@ type Storage struct {
 }
 
 type Entry struct {
-	ID   int64    `json:"id"`
-	Path string   `json:"path"`
-	Tags []string `json:"tags"`
+	ID          int64    `json:"id"`
+	Path        string   `json:"path"`
+	Tags        []string `json:"tags"`
+	CreatedAt   string   `json:"created_at"`
+	UserID      int64    `json:"user"`
+	Description string   `json:"description"`
 }
 
 type IndexedEntry struct {
@@ -54,7 +60,10 @@ func (s *Storage) Init() error {
 	_, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS entries (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			path TEXT NOT NULL UNIQUE
+			path TEXT NOT NULL UNIQUE,
+			user_id INTEGER,
+			created_at TEXT(12),
+			desc TEXT
 		)
 	`)
 	if err != nil {
@@ -127,8 +136,8 @@ func (s *Storage) InsertEntry(e IndexedEntry) (int64, error) {
 	defer tx.Rollback()
 
 	res, err := tx.Exec(`
-		INSERT INTO entries (path) VALUES (?)
-	`, e.Path)
+		INSERT INTO entries (path, created_at, user_id, desc) VALUES (?,?,?,?)
+	`, e.Path, e.CreatedAt, e.UserID, e.Description)
 	if err != nil {
 		return 0, err
 	}
@@ -214,13 +223,13 @@ func insertTags(tx *sql.Tx, entryID int64, tags []string) error {
 	return nil
 }
 
-func (s *Storage) GetEntry(entryID int64) (Entry, error) {
+func (s *Storage) GetEntry(ctx context.Context, entryID int64) (Entry, error) {
 	if entryID < 0 {
 		return Entry{}, fmt.Errorf("id can not be negative")
 	}
 
 	query := `
-		SELECT e.path, GROUP_CONCAT(t.name, ', ') AS tags
+		SELECT e.path, e.created_at, e.desc, e.user_id, GROUP_CONCAT(t.name, ', ') AS tags
 		FROM entries e
 		LEFT JOIN entry_tags et ON et.entry_id = e.id
 		LEFT JOIN tags t ON t.id = et.tag_id
@@ -228,12 +237,13 @@ func (s *Storage) GetEntry(entryID int64) (Entry, error) {
 		GROUP BY e.id, e.path
 	`
 
-	row := s.db.QueryRow(query, entryID)
+	row := s.db.QueryRowContext(ctx, query, entryID)
 
-	var path string
+	var path, createdAt, desc string
+	var userID int64
 	var tags sql.NullString
 
-	err := row.Scan(&path, &tags)
+	err := row.Scan(&path, &createdAt, &desc, &userID, &tags)
 	if err != nil {
 		return Entry{}, err
 	}
@@ -247,34 +257,10 @@ func (s *Storage) GetEntry(entryID int64) (Entry, error) {
 		entryID,
 		path,
 		tagList,
+		createdAt,
+		userID,
+		desc,
 	}, nil
-}
-func (s *Storage) GetTags(entryID int64) ([]string, error) {
-	if entryID < 0 {
-		return nil, fmt.Errorf("id can not be negative")
-	}
-
-	query := `
-		SELECT GROUP_CONCAT(t.name, ', ') AS tags
-		FROM entry_tags et
-		LEFT JOIN tags t ON t.id = et.tag_id
-		WHERE et.entry_id = ?
-	`
-	row := s.db.QueryRow(query, entryID)
-
-	var tags sql.NullString
-
-	err := row.Scan(&tags)
-	if err != nil {
-		return nil, err
-	}
-
-	var tagList []string
-	if tags.Valid {
-		tagList = strings.Split(tags.String, ", ")
-	}
-
-	return tagList, nil
 }
 
 func (s *Storage) DeleteEntry(entryID int64) error {
@@ -308,6 +294,64 @@ func (s *Storage) DeleteEntry(entryID int64) error {
 	}
 
 	return tx.Commit()
+}
+
+func (s *Storage) GetEntryTags(ctx context.Context, entryID int64) ([]string, error) {
+	if entryID < 0 {
+		return nil, fmt.Errorf("id can not be negative")
+	}
+
+	query := `
+		SELECT GROUP_CONCAT(t.name, ', ') AS tags
+		FROM entry_tags et
+		LEFT JOIN tags t ON t.id = et.tag_id
+		WHERE et.entry_id = ?
+	`
+	row := s.db.QueryRowContext(ctx, query, entryID)
+	if row.Err() != nil {
+		return nil, row.Err()
+	}
+
+	var tags sql.NullString
+
+	err := row.Scan(&tags)
+	if err != nil {
+		return nil, err
+	}
+
+	var tagList []string
+	if tags.Valid {
+		tagList = strings.Split(tags.String, ", ")
+	}
+
+	return tagList, nil
+}
+
+func (s *Storage) GetAvailableTags(ctx context.Context) ([]string, error) {
+	query := `
+		SELECT GROUP_CONCAT(name, ', ') AS tags
+		FROM tags
+	`
+
+	row := s.db.QueryRowContext(ctx, query)
+
+	if row.Err() != nil {
+		return nil, row.Err()
+	}
+
+	var tags sql.NullString
+
+	err := row.Scan(&tags)
+	if err != nil {
+		return nil, err
+	}
+
+	var tagList []string
+	if tags.Valid {
+		tagList = strings.Split(tags.String, ", ")
+	}
+
+	return tagList, nil
 }
 
 func (s *Storage) SetSearchWeights(tag, visual, text float32) {

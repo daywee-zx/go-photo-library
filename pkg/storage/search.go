@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math"
+	"sort"
 	"strings"
 )
 
@@ -18,7 +18,7 @@ type searchResult struct {
 	Err error
 }
 
-func (s *Storage) Search(ctx context.Context, tags []string, queryEmbed []float32) (Entry, error) {
+func (s *Storage) Search(ctx context.Context, tags []string, queryEmbed []float32, topK int) ([]Entry, error) {
 	tagCh := make(chan searchResult, 1)
 	visCh := make(chan searchResult, 1)
 	textCh := make(chan searchResult, 1)
@@ -55,22 +55,22 @@ func (s *Storage) Search(ctx context.Context, tags []string, queryEmbed []float3
 			gotTag = true
 			if tagRes.Err != nil {
 				cancel()
-				return Entry{}, tagRes.Err
+				return nil, tagRes.Err
 			}
 		case visRes = <-visCh:
 			gotVis = true
 			if visRes.Err != nil {
 				cancel()
-				return Entry{}, visRes.Err
+				return nil, visRes.Err
 			}
 		case textRes = <-textCh:
 			gotText = true
 			if textRes.Err != nil {
 				cancel()
-				return Entry{}, textRes.Err
+				return nil, textRes.Err
 			}
 		case <-ctx.Done():
-			return Entry{}, ctx.Err()
+			return nil, ctx.Err()
 		}
 	}
 
@@ -86,22 +86,35 @@ func (s *Storage) Search(ctx context.Context, tags []string, queryEmbed []float3
 		entries[v.EntryID] += v.Score * s.textSearchWeight
 	}
 
-	max := float32(math.Inf(-1))
-	var resID int64
+	cancel()
 
-	for id, value := range entries {
-		if value > max {
-			max = value
-			resID = id
+	// key-value for sorting
+	type searchKV struct {
+		ID    int64
+		Score float32
+	}
+
+	var unsortedRes []searchKV
+	for k, v := range entries {
+		unsortedRes = append(unsortedRes, searchKV{k, v})
+	}
+
+	sort.Slice(unsortedRes, func(i, j int) bool {
+		return unsortedRes[i].Score > unsortedRes[j].Score
+	})
+
+	resIDs := unsortedRes[:topK]
+
+	res := make([]Entry, topK)
+
+	for i, kv := range resIDs {
+		entry, err := s.GetEntry(ctx, kv.ID)
+		if err != nil {
+			return nil, err
 		}
+		res[i] = entry
 	}
 
-	res, err := s.GetEntry(resID)
-	if err != nil {
-		return Entry{}, err
-	}
-
-	fmt.Printf("Score hit: %v. ", max)
 	return res, nil
 }
 

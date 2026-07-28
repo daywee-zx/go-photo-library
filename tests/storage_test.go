@@ -1,8 +1,10 @@
 package tests
 
 import (
-	"photoLibrary/pkg/storage"
+	"context"
 	"testing"
+
+	"github.com/daywee-zx/go-photo-library/pkg/storage"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -67,7 +69,7 @@ func TestInsertEntry(t *testing.T) {
 			}
 			require.NoError(t, err, "error not expected")
 
-			entry, err := store.GetEntry(id)
+			entry, err := store.GetEntry(context.Background(), id)
 			require.NoError(t, err, "error not expected")
 			assert.ElementsMatch(t, tc.entry.Tags, entry.Tags, "tags do not match")
 		})
@@ -114,25 +116,27 @@ func TestDeleteEntry(t *testing.T) {
 		ids = append(ids, id)
 	}
 
+	ctx := context.Background()
+
 	// delete no tags
 	err := store.DeleteEntry(ids[1])
 	require.NoError(t, err)
-	entry, err := store.GetEntry(ids[1])
+	entry, err := store.GetEntry(ctx, ids[1])
 	assert.Equal(t, "", entry.Path, "entry was not deleted")
 
 	// delete with tags
 	err = store.DeleteEntry(ids[0])
 	require.NoError(t, err)
-	entry, err = store.GetEntry(ids[0])
+	entry, err = store.GetEntry(ctx, ids[0])
 	assert.Equal(t, "", entry.Path, "entry was not deleted")
 
 	// ensure others' tags were not cascade deleted
-	tags, err := store.GetTags(ids[2])
+	tags, err := store.GetEntryTags(ctx, ids[2])
 	assert.Len(t, tags, 2, "entry has unsufficient tags")
 
 	// delete remaining
 	err = store.DeleteEntry(ids[2])
 	require.NoError(t, err)
-	entry, err = store.GetEntry(ids[2])
+	entry, err = store.GetEntry(ctx, ids[2])
 	assert.Equal(t, "", entry.Path, "entry was not deleted")
 }

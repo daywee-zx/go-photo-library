@@ -2,7 +2,7 @@ package tests
 
 import (
 	"database/sql"
-	"photoLibrary/pkg/storage"
+	"github.com/daywee-zx/go-photo-library/pkg/storage"
 	"testing"
 
 	"github.com/stretchr/testify/require"
