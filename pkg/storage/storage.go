@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	_ "modernc.org/sqlite"
 	_ "modernc.org/sqlite/vec"
@@ -15,8 +16,6 @@ const (
 	defaultTagWeight    float32 = 0.2
 	defaultVisualWeight float32 = 0.4
 	defaultTextWeight   float32 = 0.4
-
-	timeFormat string = "200601021504"
 )
 
 type Storage struct {
@@ -28,12 +27,12 @@ type Storage struct {
 }
 
 type Entry struct {
-	ID          int64    `json:"id"`
-	Path        string   `json:"path"`
-	Tags        []string `json:"tags"`
-	CreatedAt   string   `json:"created_at"`
-	UserID      int64    `json:"user"`
-	Description string   `json:"description"`
+	ID          int64     `json:"id"`
+	Path        string    `json:"path"`
+	Tags        []string  `json:"tags"`
+	CreatedAt   time.Time `json:"created_at"`
+	UserID      int64     `json:"user"`
+	Description string    `json:"description"`
 }
 
 type IndexedEntry struct {
@@ -62,7 +61,7 @@ func (s *Storage) Init() error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			path TEXT NOT NULL UNIQUE,
 			user_id INTEGER,
-			created_at TEXT(12),
+			created_at TIMESTAMP,
 			desc TEXT
 		)
 	`)
@@ -239,7 +238,8 @@ func (s *Storage) GetEntry(ctx context.Context, entryID int64) (Entry, error) {
 
 	row := s.db.QueryRowContext(ctx, query, entryID)
 
-	var path, createdAt, desc string
+	var path, desc string
+	var createdAt time.Time
 	var userID int64
 	var tags sql.NullString
 
