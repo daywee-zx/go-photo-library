@@ -2,6 +2,7 @@ package aimanip
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,7 +23,7 @@ type EmbedResponse struct {
 	Embeddings [][]float32 `json:"embeddings"`
 }
 
-func (e Embedder) Embed(input []string) ([][]float32, error) {
+func (e Embedder) Embed(ctx context.Context, input []string) ([][]float32, error) {
 	modelName := e.ModelName
 
 	reqBody := EmbedRequest{
@@ -34,9 +35,10 @@ func (e Embedder) Embed(input []string) ([][]float32, error) {
 		return nil, fmt.Errorf("Error occurred while marshaling request body:%v", err)
 	}
 
-	url := e.URL
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.URL, bytes.NewBuffer(data))
+	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("Error occurred while sending request to the model:%v", err)
 	}

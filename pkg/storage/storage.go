@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	_ "modernc.org/sqlite"
 	_ "modernc.org/sqlite/vec"
@@ -15,8 +16,6 @@ const (
 	defaultTagWeight    float32 = 0.2
 	defaultVisualWeight float32 = 0.4
 	defaultTextWeight   float32 = 0.4
-
-	timeFormat string = "200601021504"
 )
 
 type Storage struct {
@@ -28,12 +27,12 @@ type Storage struct {
 }
 
 type Entry struct {
-	ID          int64    `json:"id"`
-	Path        string   `json:"path"`
-	Tags        []string `json:"tags"`
-	CreatedAt   string   `json:"created_at"`
-	UserID      int64    `json:"user"`
-	Description string   `json:"description"`
+	ID          int64     `json:"id"`
+	Path        string    `json:"path"`
+	Tags        []string  `json:"tags"`
+	CreatedAt   time.Time `json:"created_at"`
+	UserID      int64     `json:"user"`
+	Description string    `json:"description"`
 }
 
 type IndexedEntry struct {
@@ -62,7 +61,7 @@ func (s *Storage) Init() error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			path TEXT NOT NULL UNIQUE,
 			user_id INTEGER,
-			created_at TEXT(12),
+			created_at TIMESTAMP,
 			desc TEXT
 		)
 	`)
@@ -124,30 +123,29 @@ func (s *Storage) Init() error {
 	return nil
 }
 
-func (s *Storage) InsertEntry(e IndexedEntry) (int64, error) {
+func (s *Storage) InsertEntry(ctx context.Context, e IndexedEntry) (int64, error) {
 	if e.Path == "" {
 		return 0, fmt.Errorf("no path for entry specified")
 	}
 
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
 	defer tx.Rollback()
 
-	res, err := tx.Exec(`
+	res, err := tx.ExecContext(ctx, `
 		INSERT INTO entries (path, created_at, user_id, desc) VALUES (?,?,?,?)
 	`, e.Path, e.CreatedAt, e.UserID, e.Description)
 	if err != nil {
 		return 0, err
 	}
-
 	entryID, err := res.LastInsertId()
 	if err != nil {
 		return 0, err
 	}
 
-	err = insertTags(tx, entryID, e.Tags)
+	err = insertTags(ctx, tx, entryID, e.Tags)
 	if err != nil {
 		return 0, err
 	}
@@ -156,8 +154,7 @@ func (s *Storage) InsertEntry(e IndexedEntry) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-
-	_, err = tx.Exec(`
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO visual_embeddings (rowid, embedding) VALUES (?, ?)
 	`, entryID, string(visualEmbedJSON))
 	if err != nil {
@@ -168,8 +165,7 @@ func (s *Storage) InsertEntry(e IndexedEntry) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-
-	_, err = tx.Exec(`
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO ocr_embeddings (rowid, embedding) VALUES (?, ?)
 	`, entryID, string(textEmbedJSON))
 	if err != nil {
@@ -179,7 +175,7 @@ func (s *Storage) InsertEntry(e IndexedEntry) (int64, error) {
 	return entryID, tx.Commit()
 }
 
-func insertTags(tx *sql.Tx, entryID int64, tags []string) error {
+func insertTags(ctx context.Context, tx *sql.Tx, entryID int64, tags []string) error {
 	if len(tags) == 0 {
 		return nil
 	}
@@ -200,7 +196,7 @@ func insertTags(tx *sql.Tx, entryID int64, tags []string) error {
 		INSERT OR IGNORE INTO tags (name) VALUES %s
 	`, placeholder)
 
-	_, err := tx.Exec(query, args...)
+	_, err := tx.ExecContext(ctx, query, args...)
 	if err != nil {
 		return err
 	}
@@ -215,7 +211,7 @@ func insertTags(tx *sql.Tx, entryID int64, tags []string) error {
 	entryArgs := make([]any, 1)
 	entryArgs[0] = entryID
 	entryArgs = append(entryArgs, args...)
-	_, err = tx.Exec(query, entryArgs...)
+	_, err = tx.ExecContext(ctx, query, entryArgs...)
 	if err != nil {
 		return err
 	}
@@ -239,7 +235,8 @@ func (s *Storage) GetEntry(ctx context.Context, entryID int64) (Entry, error) {
 
 	row := s.db.QueryRowContext(ctx, query, entryID)
 
-	var path, createdAt, desc string
+	var path, desc string
+	var createdAt time.Time
 	var userID int64
 	var tags sql.NullString
 
@@ -263,32 +260,23 @@ func (s *Storage) GetEntry(ctx context.Context, entryID int64) (Entry, error) {
 	}, nil
 }
 
-func (s *Storage) DeleteEntry(entryID int64) error {
-	tx, err := s.db.Begin()
+func (s *Storage) DeleteEntry(ctx context.Context, entryID int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	_, err = tx.Exec(`DELETE FROM visual_embeddings WHERE rowid = ?`, entryID)
-	if err != nil {
-		return err
-	}
-	_, err = tx.Exec(`DELETE FROM ocr_embeddings WHERE rowid = ?`, entryID)
-	if err != nil {
-		return err
-	}
-	_, err = tx.Exec(`DELETE FROM entries WHERE id = ?`, entryID)
-	if err != nil {
-		return err
-	}
-	_, err = tx.Exec(`
+	_, err = tx.ExecContext(ctx, `
+		DELETE FROM visual_embeddings WHERE rowid = ?;
+		DELETE FROM ocr_embeddings WHERE rowid = ?;
+		DELETE FROM entries WHERE id = ?;
 		DELETE FROM tags
-		WHERE id NOT IN (
-			SELECT DISTINCT tag_id
-			FROM entry_tags
-		)
-	`)
+			WHERE id NOT IN (
+				SELECT DISTINCT tag_id
+				FROM entry_tags
+			)
+	`, entryID)
 	if err != nil {
 		return err
 	}

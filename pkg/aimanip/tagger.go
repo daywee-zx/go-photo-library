@@ -2,6 +2,7 @@ package aimanip
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -46,7 +47,7 @@ type TagReqResponse struct {
 }
 
 // TagImage takes an image path as input and returns a slice of tags, an image description, and an error if any occurs during the tagging process.
-func (t Tagger) TagImage(imagePath string) (TagImageData, error) {
+func (t Tagger) TagImage(ctx context.Context, imagePath string) (TagImageData, error) {
 	imageData, err := os.ReadFile(imagePath)
 	if err != nil {
 		return TagImageData{}, fmt.Errorf("Error occured while opening image file:%v", err)
@@ -70,7 +71,10 @@ func (t Tagger) TagImage(imagePath string) (TagImageData, error) {
 		return TagImageData{}, fmt.Errorf("Error occurred while marshaling request body:%v", err)
 	}
 
-	resp, err := http.Post(t.URL, "application/json", bytes.NewBuffer(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.URL, bytes.NewBuffer(data))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return TagImageData{}, fmt.Errorf("Error occurred while sending request to the model:%v", err)
 	}
@@ -96,7 +100,7 @@ func (t Tagger) TagImage(imagePath string) (TagImageData, error) {
 	return tagResp, nil
 }
 
-func (t Tagger) TagRequest(request string) ([]string, error) {
+func (t Tagger) TagRequest(ctx context.Context, request string) ([]string, error) {
 	reqBody := ChatRequest{
 		Model: t.ModelName,
 		Messages: []Message{
@@ -113,7 +117,10 @@ func (t Tagger) TagRequest(request string) ([]string, error) {
 		return nil, fmt.Errorf("Error occurred while marshaling request body:%v", err)
 	}
 
-	resp, err := http.Post(t.URL, "application/json", bytes.NewBuffer(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.URL, bytes.NewBuffer(data))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("Error occurred while sending request to the model:%v", err)
 	}

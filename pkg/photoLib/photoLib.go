@@ -9,24 +9,24 @@ import (
 )
 
 type Embedder interface {
-	Embed(input []string) ([][]float32, error)
+	Embed(ctx context.Context, input []string) ([][]float32, error)
 }
 
 type Tagger interface {
-	TagImage(path string) (aimanip.TagImageData, error)
-	TagRequest(request string) ([]string, error)
+	TagImage(context.Context, string) (aimanip.TagImageData, error)
+	TagRequest(context.Context, string) ([]string, error)
 }
 
 type StorageBack interface {
-	InsertEntry(storage.IndexedEntry) (int64, error)
-	DeleteEntry(int64) error
+	InsertEntry(context.Context, storage.IndexedEntry) (int64, error)
+	DeleteEntry(context.Context, int64) error
 
 	GetEntry(context.Context, int64) (storage.Entry, error)
 	GetEntryTags(context.Context, int64) ([]string, error)
 	GetAvailableTags(context.Context) ([]string, error)
 
-	Search(ctx context.Context, tags []string, queryEmbed []float32, topK int) ([]storage.Entry, error)
-	SetSearchWeights(tag, visual, text float32)
+	Search(context.Context, []string, []float32, int) ([]storage.Entry, error)
+	SetSearchWeights(float32, float32, float32)
 	Close() error
 }
 
@@ -41,8 +41,6 @@ type PhotoLib struct {
 	embedder Embedder
 	tagger   Tagger
 	config   SearchConfig
-
-	ctx context.Context
 }
 
 func NewPhotoLib(ctx context.Context, store StorageBack, embedder Embedder, tagger Tagger, config SearchConfig) *PhotoLib {
@@ -51,17 +49,16 @@ func NewPhotoLib(ctx context.Context, store StorageBack, embedder Embedder, tagg
 		embedder: embedder,
 		tagger:   tagger,
 		config:   config,
-		ctx:      ctx,
 	}
 }
 
-func (p *PhotoLib) AddImage(e storage.Entry) (int64, error) {
-	tagResp, err := p.tagger.TagImage(e.Path)
+func (p *PhotoLib) AddImage(ctx context.Context, e storage.Entry) (int64, error) {
+	tagResp, err := p.tagger.TagImage(ctx, e.Path)
 	if err != nil {
 		return 0, fmt.Errorf("Error tagging the image %s:%v", e.Path, err)
 	}
 
-	embeds, err := p.embedder.Embed([]string{tagResp.Description, tagResp.Text})
+	embeds, err := p.embedder.Embed(ctx, []string{tagResp.Description, tagResp.Text})
 	if err != nil {
 		return 0, fmt.Errorf("Error embedding image descriptions %s:%v", e.Path, err)
 	}
@@ -75,7 +72,7 @@ func (p *PhotoLib) AddImage(e storage.Entry) (int64, error) {
 	entry.Tags = append(e.Tags, tagResp.Tags...)
 	entry.Description = tagResp.Description
 
-	id, err := p.store.InsertEntry(entry)
+	id, err := p.store.InsertEntry(ctx, entry)
 	if err != nil {
 		return 0, fmt.Errorf("Error during adding entry %s:%v", e.Path, err)
 	}
@@ -93,19 +90,19 @@ func NewSearchConfig(tag, visual, text float32) SearchConfig {
 	return SearchConfig{tag, visual, text}
 }
 
-func (p *PhotoLib) Search(request string, topK int) ([]storage.Entry, error) {
+func (p *PhotoLib) Search(ctx context.Context, request string, topK int) ([]storage.Entry, error) {
 	embeddingCh := make(chan []float32, 1)
 	tagsCh := make(chan []string, 1)
 	errorCh := make(chan error, 2)
 
 	go func() {
 		embeds := make([][]float32, 1)
-		embeds, err := p.embedder.Embed([]string{request})
+		embeds, err := p.embedder.Embed(ctx, []string{request})
 		embeddingCh <- embeds[0]
 		errorCh <- err
 	}()
 	go func() {
-		tags, err := p.tagger.TagRequest(request)
+		tags, err := p.tagger.TagRequest(ctx, request)
 		tagsCh <- tags
 		errorCh <- err
 	}()
@@ -120,7 +117,7 @@ func (p *PhotoLib) Search(request string, topK int) ([]storage.Entry, error) {
 
 	p.UpdateSearchWeights()
 
-	entries, err := p.store.Search(p.ctx, tags, embedding, topK)
+	entries, err := p.store.Search(ctx, tags, embedding, topK)
 	if err != nil {
 		return nil, err
 	}
@@ -128,14 +125,22 @@ func (p *PhotoLib) Search(request string, topK int) ([]storage.Entry, error) {
 	return entries, nil
 }
 
-func (p *PhotoLib) InsertEntry(e storage.IndexedEntry) (int64, error) {
-	return p.store.InsertEntry(e)
+func (p *PhotoLib) InsertEntry(ctx context.Context, e storage.IndexedEntry) (int64, error) {
+	return p.store.InsertEntry(ctx, e)
 }
 
-func (p *PhotoLib) DeleteEntry(id int64) error {
-	return p.store.DeleteEntry(id)
+func (p *PhotoLib) DeleteEntry(ctx context.Context, id int64) error {
+	return p.store.DeleteEntry(ctx, id)
 }
 
-func (p *PhotoLib) GetEntry(id int64) (storage.Entry, error) {
-	return p.store.GetEntry(p.ctx, id)
+func (p *PhotoLib) GetEntry(ctx context.Context, id int64) (storage.Entry, error) {
+	return p.store.GetEntry(ctx, id)
+}
+
+func (p *PhotoLib) GetEntryTags(ctx context.Context, id int64) ([]string, error) {
+	return p.store.GetEntryTags(ctx, id)
+}
+
+func (p *PhotoLib) GetAvailableTags(ctx context.Context) ([]string, error) {
+	return p.store.GetAvailableTags(ctx)
 }

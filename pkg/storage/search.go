@@ -103,7 +103,11 @@ func (s *Storage) Search(ctx context.Context, tags []string, queryEmbed []float3
 		return unsortedRes[i].Score > unsortedRes[j].Score
 	})
 
-	resIDs := unsortedRes[:topK]
+	resIDs := unsortedRes
+
+	if len(resIDs) >= topK {
+		resIDs = unsortedRes[:topK]
+	}
 
 	res := make([]Entry, topK)
 

@@ -62,7 +62,7 @@ func TestInsertEntry(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			id, err := store.InsertEntry(tc.entry)
+			id, err := store.InsertEntry(context.Background(), tc.entry)
 			if tc.wantErr {
 				require.Error(t, err, "expected an error")
 				return
@@ -111,7 +111,7 @@ func TestDeleteEntry(t *testing.T) {
 	}
 	var ids []int64
 	for _, e := range entries {
-		id, err := store.InsertEntry(e)
+		id, err := store.InsertEntry(context.Background(), e)
 		require.NoError(t, err, "error not expected while inserting")
 		ids = append(ids, id)
 	}
@@ -119,13 +119,13 @@ func TestDeleteEntry(t *testing.T) {
 	ctx := context.Background()
 
 	// delete no tags
-	err := store.DeleteEntry(ids[1])
+	err := store.DeleteEntry(ctx, ids[1])
 	require.NoError(t, err)
 	entry, err := store.GetEntry(ctx, ids[1])
 	assert.Equal(t, "", entry.Path, "entry was not deleted")
 
 	// delete with tags
-	err = store.DeleteEntry(ids[0])
+	err = store.DeleteEntry(ctx, ids[0])
 	require.NoError(t, err)
 	entry, err = store.GetEntry(ctx, ids[0])
 	assert.Equal(t, "", entry.Path, "entry was not deleted")
@@ -135,7 +135,7 @@ func TestDeleteEntry(t *testing.T) {
 	assert.Len(t, tags, 2, "entry has unsufficient tags")
 
 	// delete remaining
-	err = store.DeleteEntry(ids[2])
+	err = store.DeleteEntry(ctx, ids[2])
 	require.NoError(t, err)
 	entry, err = store.GetEntry(ctx, ids[2])
 	assert.Equal(t, "", entry.Path, "entry was not deleted")
