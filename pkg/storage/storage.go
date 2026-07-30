@@ -134,13 +134,12 @@ func (s *Storage) InsertEntry(ctx context.Context, e IndexedEntry) (int64, error
 	}
 	defer tx.Rollback()
 
-	res, err := tx.Exec(`
+	res, err := tx.ExecContext(ctx, `
 		INSERT INTO entries (path, created_at, user_id, desc) VALUES (?,?,?,?)
 	`, e.Path, e.CreatedAt, e.UserID, e.Description)
 	if err != nil {
 		return 0, err
 	}
-
 	entryID, err := res.LastInsertId()
 	if err != nil {
 		return 0, err
@@ -155,8 +154,7 @@ func (s *Storage) InsertEntry(ctx context.Context, e IndexedEntry) (int64, error
 	if err != nil {
 		return 0, err
 	}
-
-	_, err = tx.Exec(`
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO visual_embeddings (rowid, embedding) VALUES (?, ?)
 	`, entryID, string(visualEmbedJSON))
 	if err != nil {
@@ -167,8 +165,7 @@ func (s *Storage) InsertEntry(ctx context.Context, e IndexedEntry) (int64, error
 	if err != nil {
 		return 0, err
 	}
-
-	_, err = tx.Exec(`
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO ocr_embeddings (rowid, embedding) VALUES (?, ?)
 	`, entryID, string(textEmbedJSON))
 	if err != nil {
@@ -263,32 +260,23 @@ func (s *Storage) GetEntry(ctx context.Context, entryID int64) (Entry, error) {
 	}, nil
 }
 
-func (s *Storage) DeleteEntry(entryID int64) error {
-	tx, err := s.db.Begin()
+func (s *Storage) DeleteEntry(ctx context.Context, entryID int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	_, err = tx.Exec(`DELETE FROM visual_embeddings WHERE rowid = ?`, entryID)
-	if err != nil {
-		return err
-	}
-	_, err = tx.Exec(`DELETE FROM ocr_embeddings WHERE rowid = ?`, entryID)
-	if err != nil {
-		return err
-	}
-	_, err = tx.Exec(`DELETE FROM entries WHERE id = ?`, entryID)
-	if err != nil {
-		return err
-	}
-	_, err = tx.Exec(`
+	_, err = tx.ExecContext(ctx, `
+		DELETE FROM visual_embeddings WHERE rowid = ?;
+		DELETE FROM ocr_embeddings WHERE rowid = ?;
+		DELETE FROM entries WHERE id = ?;
 		DELETE FROM tags
-		WHERE id NOT IN (
-			SELECT DISTINCT tag_id
-			FROM entry_tags
-		)
-	`)
+			WHERE id NOT IN (
+				SELECT DISTINCT tag_id
+				FROM entry_tags
+			)
+	`, entryID)
 	if err != nil {
 		return err
 	}

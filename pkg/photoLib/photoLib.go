@@ -140,3 +140,7 @@ func (p *PhotoLib) GetEntry(ctx context.Context, id int64) (storage.Entry, error
 func (p *PhotoLib) GetEntryTags(ctx context.Context, id int64) ([]string, error) {
 	return p.store.GetEntryTags(ctx, id)
 }
+
+func (p *PhotoLib) GetAvailableTags(ctx context.Context) ([]string, error) {
+	return p.store.GetAvailableTags(ctx)
+}
