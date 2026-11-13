@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"time"
 
+	api "github.com/daywee-zx/go-photo-library/api/proto"
 	photolib "github.com/daywee-zx/go-photo-library/pkg/photoLib"
 	"github.com/daywee-zx/go-photo-library/pkg/storage"
-	api "github.com/daywee-zx/go-photolib-grpc/api/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"

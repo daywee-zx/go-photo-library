@@ -106,10 +106,10 @@ func (s *Storage) Search(ctx context.Context, tags []string, queryEmbed []float3
 	resIDs := unsortedRes
 
 	if len(resIDs) >= topK {
-		resIDs = unsortedRes[:topK]
+		resIDs = resIDs[:topK]
 	}
 
-	res := make([]Entry, topK)
+	res := make([]Entry, len(resIDs))
 
 	for i, kv := range resIDs {
 		entry, err := s.GetEntry(ctx, kv.ID)
