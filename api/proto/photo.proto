@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+package photo;
+
+option go_package = "github.com/daywee-zx/go-photolib-grpc/api;api";
+
+service PhotoLibrary {
+    rpc AddImage(AddImageRequest) returns (SingleID);
+    rpc DeleteEntry(SingleID) returns (google.protobuf.Empty);
+
+    rpc GetImage(SingleID) returns (EntryWithImage);
+    rpc GetEntry(SingleID) returns (Entry);
+    rpc GetEntryTags(SingleID) returns (TagsResponse);
+    rpc GetAvailableTags(google.protobuf.Empty) returns (TagsResponse);
+
+    rpc Search(SearchRequest) returns (SearchResponse);
+}
+
+message AddImageRequest {
+    bytes image = 1;
+    repeated string tags = 2;
+    int64 user = 3;
+}
+
+message SingleID {
+    int64 id = 1;
+}
+
+message Entry {
+    int64 id = 1;
+    repeated string tags = 2;
+    google.protobuf.Timestamp created_at = 3;
+    int64 user = 4;
+    string desc = 5;
+}
+
+message EntryWithImage {
+    Entry entry = 1;
+    bytes image = 2;
+}
+
+message TagsResponse {
+    repeated string tags = 1;
+}
+
+message SearchRequest {
+    string query = 1;
+    int32 top_k = 2; 
+}
+
+message SearchResponse {
+    repeated Entry result = 1;
+}

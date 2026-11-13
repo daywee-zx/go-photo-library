@@ -1,80 +1,75 @@
 package main
 
+import (
+	"context"
+	"database/sql"
+	"log"
+	"net"
+
+	api "github.com/daywee-zx/go-photo-library/api/proto"
+	"github.com/daywee-zx/go-photo-library/api/server"
+	"github.com/daywee-zx/go-photo-library/pkg/aimanip"
+	photolib "github.com/daywee-zx/go-photo-library/pkg/photoLib"
+	"github.com/daywee-zx/go-photo-library/pkg/storage"
+	"google.golang.org/grpc"
+)
+
 func main() {
-	// obsolete testing code
-	/*
-		dbPath := "test_images/test.db"
+	// TODO: switch to .env
+	imagePath := "data/images/"
+	dbPath := "data/photo.db"
+	embedderModel := "bge-m3"
+	embedderURL := "http://localhost:11434/api/embed"
+	taggerModel := "qwen2.5vl"
+	taggerURL := "http://localhost:11434/api/chat"
 
-		db, err := sql.Open("sqlite", dbPath)
-		if err != nil {
-			return
-		}
-		storage := storage.NewStorage(db)
-		defer storage.Close()
+	var tagWeight, visualWeight, textWeight float32
+	tagWeight, visualWeight, textWeight = 0.2, 0.4, 0.4
 
-		err = storage.Init()
-		if err != nil {
-			fmt.Printf("Error initializing database: %v\n", err)
-			return
-		}
+	// start the storage
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	storage := storage.NewStorage(db)
+	defer storage.Close()
 
-		ctx := context.Background()
+	err = storage.Init()
+	if err != nil {
+		log.Fatal(err)
+	}
 
-		tagWeight, visualWeight, textWeight := 0.2, 0.4, 0.4
+	// configure ai APIs
+	embedder := aimanip.Embedder{ModelName: embedderModel, URL: embedderURL}
+	tagger := aimanip.Tagger{ModelName: taggerModel, URL: taggerURL}
 
-		lib := photolib.NewPhotoLib(
-			ctx,
-			storage,
-			aimanip.Embedder{
-				ModelName: "bge-m3",
-				URL:       "http://localhost:11434/api/embed",
-			},
-			aimanip.Tagger{
-				ModelName: "qwen2.5vl",
-				URL:       "http://localhost:11434/api/chat",
-			},
-			photolib.NewSearchConfig(float32(tagWeight), float32(visualWeight), float32(textWeight)),
-		)
+	// create photolib
+	ctx := context.Background()
+	searchConfig := photolib.NewSearchConfig(tagWeight, visualWeight, textWeight)
 
-		path := "test_images/test%d.jpg"
+	lib := photolib.NewPhotoLib(
+		ctx,
+		storage,
+		embedder,
+		tagger,
+		searchConfig,
+	)
 
-		for i := 1; i <= 4; i++ {
-			nowPath := fmt.Sprintf(path, i)
-			id, err := lib.AddImage(nowPath, []string{})
-			if err != nil {
-				fmt.Println(err)
-				continue
-			}
-			fmt.Printf("Image %s successfully inserted at id %d\n", nowPath, id)
-		}
+	// start the server
+	lis, err := net.Listen("tcp", ":50051")
+	if err != nil {
+		log.Fatal(err)
+	}
 
-		testCases := []struct {
-			request    string
-			expectedID int64
-		}{
-			{"comic about soldiers", 1},
-			{"beautiful landscape", 4},
-			{"trolley problem", 3},
-			{"я вам квартиру без черкашей сдавала", 2},
-			{"а где граница тащ старшина", 1},
-			{"no more psychological dylemma", 3},
-			{"where is the border sergeant", 1},
-		}
+	grpcServer := grpc.NewServer()
 
-		for _, v := range testCases {
-			now := time.Now()
-			entries, err := lib.Search(v.request, 1)
-			if err != nil {
-				fmt.Println(err)
-			}
-			fmt.Printf("Request: %s. Want: %d. Result: %d. Time elapsed: %v\n", v.request, v.expectedID, entries[0].ID, time.Since(now))
-		}
+	svc := server.NewServer(lib, imagePath)
 
-		for i := 1; i <= 4; i++ {
+	api.RegisterPhotoLibraryServer(grpcServer, svc)
 
-			if err = lib.DeleteEntry(int64(i)); err != nil {
-				fmt.Printf("Error occured while deleting: %v\n", err)
-			}
-			fmt.Printf("Successfully deleted id %d\n", i)
-		}*/
+	log.Println("gRPC server listening on :50051")
+
+	if err := grpcServer.Serve(lis); err != nil {
+		log.Fatal(err)
+	}
 }
