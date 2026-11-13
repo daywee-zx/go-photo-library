@@ -1,2 +1,3 @@
 .vscode
 test_images/test.db
+./data
