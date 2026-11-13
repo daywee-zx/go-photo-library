@@ -9,6 +9,7 @@ import (
 	api "github.com/daywee-zx/go-photo-library/api/proto"
 	"github.com/daywee-zx/go-photo-library/api/server"
 	"github.com/daywee-zx/go-photo-library/pkg/aimanip"
+	"github.com/daywee-zx/go-photo-library/pkg/misc"
 	photolib "github.com/daywee-zx/go-photo-library/pkg/photoLib"
 	"github.com/daywee-zx/go-photo-library/pkg/storage"
 	"google.golang.org/grpc"
@@ -16,8 +17,9 @@ import (
 
 func main() {
 	// TODO: switch to .env
-	imagePath := "data/images/"
-	dbPath := "data/photo.db"
+	dataPath := "data/"
+	imagePath := dataPath + "images/"
+	dbPath := dataPath + "photo.db"
 	embedderModel := "bge-m3"
 	embedderURL := "http://localhost:11434/api/embed"
 	taggerModel := "qwen2.5vl"
@@ -27,9 +29,14 @@ func main() {
 	tagWeight, visualWeight, textWeight = 0.2, 0.4, 0.4
 
 	// start the storage
+	err := misc.MkdirIfNotExist(dataPath)
+	if err != nil {
+		log.Fatal("error while creating data dir: ", err)
+	}
+
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("error while opening database: ", err)
 	}
 	storage := storage.NewStorage(db)
 	defer storage.Close()
